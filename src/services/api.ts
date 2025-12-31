@@ -17,7 +17,6 @@ export async function parseExpense(text: string, userId: string) {
         userId,
     });
     return response.data;
-    return response.data;
 }
 
 export const sendTextExpense = parseExpense;

@@ -1,65 +1,28 @@
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
+import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { AvatarButton } from "../components/AvatarButton";
 import { MonthlyTotal } from "../components/MonthlyTotal";
 import { MonthContextLabel } from "../components/MonthContextLabel";
 import { InputBar } from "../components/InputBar";
 import { ConfirmationPopup } from "../components/ConfirmationPopup";
 import { useExpenseStore } from "../store/expenseStore";
-import { useEffect, useState } from "react";
-import { correctExpense } from "../services/api";
 
 export default function MainScreen() {
+    const router = useRouter();
     const {
         popupVisible,
         popupMode,
         popupExpenses,
         monthContext,
-        setPopupVisible,
-        setPopupMode,
-        setPopupExpenses,
+        editingIndex,
+        handleItemPress,
+        handleCategorySelect
     } = useExpenseStore();
 
-    const [editingIndex, setEditingIndex] = useState<number | null>(null);
-
-    // Auto Dismiss Logic
-    useEffect(() => {
-        // Logic: If added (3500ms), if thanks (1800ms), if selecting (no timer)
-        let timer: NodeJS.Timeout;
-
-        if (popupVisible) {
-            if (popupMode === 'added') {
-                timer = setTimeout(() => setPopupVisible(false), 3500);
-            } else if (popupMode === 'thanks') {
-                timer = setTimeout(() => setPopupVisible(false), 1800);
-            }
-        }
-        return () => clearTimeout(timer);
-    }, [popupVisible, popupMode]);
-
-    // Interaction Handlers
-    const handleItemPress = (index: number) => {
-        setEditingIndex(index);
-        setPopupMode("selecting");
-    };
-
-    const handleCategorySelect = async (category: string) => {
-        if (editingIndex === null) return;
-
-        // Optimistic Store Update
-        const newExpenses = [...popupExpenses];
-        if (newExpenses[editingIndex]) {
-            const exp = { ...newExpenses[editingIndex] };
-            exp.category = category;
-            newExpenses[editingIndex] = exp;
-            setPopupExpenses(newExpenses);
-
-            setPopupMode("thanks"); // Triggers auto dismiss via effect
-
-            // API
-            try {
-                await correctExpense(exp.expense_id, category);
-            } catch (e) { console.error(e); }
-        }
+    const handleTotalPress = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+        router.push("/summary");
     };
 
     return (
@@ -70,7 +33,9 @@ export default function MainScreen() {
                 {monthContext !== "current" && (
                     <MonthContextLabel label={monthContext} />
                 )}
-                <MonthlyTotal />
+                <Pressable onPress={handleTotalPress}>
+                    <MonthlyTotal />
+                </Pressable>
             </View>
 
             <InputBar />

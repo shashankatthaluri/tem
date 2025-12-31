@@ -32,6 +32,7 @@ export const initDB = async () => {
         amount DECIMAL(10, 2) NOT NULL,
         category VARCHAR(100),
         description TEXT,
+        audio_path TEXT,
         date TIMESTAMP DEFAULT NOW(),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()

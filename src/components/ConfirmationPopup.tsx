@@ -2,6 +2,7 @@ import { Animated, StyleSheet, Text, View, TouchableOpacity, ScrollView } from "
 import { useEffect, useRef, useState } from "react";
 import React from 'react';
 import { ParsedExpenseItem } from "../types/expense";
+import { typography } from "../theme/typography";
 
 interface ConfirmationPopupProps {
     visible: boolean;
@@ -59,6 +60,7 @@ export function ConfirmationPopup({ visible, expenses, mode, onItemPress, onCate
 
     return (
         <Animated.View
+            pointerEvents="box-none"
             style={[
                 styles.container,
                 {
@@ -67,46 +69,48 @@ export function ConfirmationPopup({ visible, expenses, mode, onItemPress, onCate
                 },
             ]}
         >
-            {mode === "added" && (
-                <>
-                    <Text style={styles.title}>Expenses added</Text>
-                    {expenses.map((e, i) => (
-                        <TouchableOpacity key={i} onPress={() => onItemPress?.(i)} activeOpacity={0.7} style={styles.row}>
-                            <View style={styles.checkboxSelected}>
-                                <View style={styles.checkboxInner} />
-                            </View>
-                            <Text style={styles.item}>
-                                {e.currency} {e.amount} → {e.category}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </>
-            )}
+            <View pointerEvents="auto">
+                {mode === "added" && (
+                    <>
+                        <Text style={styles.title}>Expenses added</Text>
+                        {expenses.map((e, i) => (
+                            <TouchableOpacity key={i} onPress={() => onItemPress?.(i)} activeOpacity={0.7} style={styles.row}>
+                                <View style={styles.checkboxSelected}>
+                                    <View style={styles.checkboxInner} />
+                                </View>
+                                <Text style={styles.item}>
+                                    {parseFloat(e.amount.toString()).toLocaleString()} → {e.category}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </>
+                )}
 
-            {mode === "selecting" && (
-                <>
-                    <Text style={styles.title}>Correct Category</Text>
-                    <ScrollView style={styles.scrollList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                        {CATEGORIES.map((cat) => {
-                            const isSelected = cat === selectedCategory;
-                            return (
-                                <TouchableOpacity key={cat} onPress={() => onCategorySelect?.(cat)} style={styles.row}>
-                                    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                                        {isSelected && <View style={styles.checkboxInner} />}
-                                    </View>
-                                    <Text style={[styles.item, isSelected && styles.selectedText]}>
-                                        {cat}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </ScrollView>
-                </>
-            )}
+                {mode === "selecting" && (
+                    <>
+                        <Text style={styles.title}>Correct Category</Text>
+                        <ScrollView style={styles.scrollList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                            {CATEGORIES.map((cat) => {
+                                const isSelected = cat === selectedCategory;
+                                return (
+                                    <TouchableOpacity key={cat} onPress={() => onCategorySelect?.(cat)} style={styles.row}>
+                                        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                                            {isSelected && <View style={styles.checkboxInner} />}
+                                        </View>
+                                        <Text style={[styles.item, isSelected && styles.selectedText]}>
+                                            {cat}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    </>
+                )}
 
-            {mode === "thanks" && (
-                <Text style={styles.thanks}>Thanks — I’ll remember this.</Text>
-            )}
+                {mode === "thanks" && (
+                    <Text style={styles.thanks}>Thanks — I’ll remember this.</Text>
+                )}
+            </View>
         </Animated.View>
     );
 }
@@ -130,13 +134,13 @@ const styles = StyleSheet.create({
         maxHeight: 300,
     },
     title: {
-        fontWeight: "600",
         color: "#000",
         marginBottom: 8,
         opacity: 0.5,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         fontSize: 10,
+        ...typography.regular // Assuming regular per theme consistency, though previous was fontWeight 600
     },
     row: {
         flexDirection: 'row',
@@ -147,14 +151,17 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: "#000",
         marginLeft: 12,
+        ...typography.regular
     },
     selectedText: {
-        fontWeight: '600',
+        // fontWeight handled by fontFamily if using regular vs medium
+        ...typography.medium
     },
     thanks: {
         fontSize: 14,
         color: "#000",
         textAlign: 'center',
+        ...typography.regular
     },
     // Checkbox Styling
     checkbox: {
