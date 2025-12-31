@@ -1,3 +1,8 @@
+/**
+ * ⚠️ CORE PIPELINE FILE
+ * Do NOT modify logic without explicit design approval.
+ * UI-only changes must not touch behavior.
+ */
 import { Animated, StyleSheet, Text, View, TouchableOpacity, ScrollView } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import React from 'react';

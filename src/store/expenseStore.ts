@@ -1,3 +1,8 @@
+/**
+ * ⚠️ CORE PIPELINE FILE
+ * Do NOT modify logic without explicit design approval.
+ * UI-only changes must not touch behavior.
+ */
 import { create } from 'zustand';
 import { ParsedExpenseItem } from '../types/expense';
 import { correctExpense } from '../services/api';

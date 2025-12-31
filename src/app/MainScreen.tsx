@@ -1,3 +1,8 @@
+/**
+ * ⚠️ CORE PIPELINE FILE
+ * Do NOT modify logic without explicit design approval.
+ * UI-only changes must not touch behavior.
+ */
 import { View, StyleSheet, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";

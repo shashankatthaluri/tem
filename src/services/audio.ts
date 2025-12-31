@@ -1,3 +1,8 @@
+/**
+ * ⚠️ CORE PIPELINE FILE
+ * Do NOT modify logic without explicit design approval.
+ * UI-only changes must not touch behavior.
+ */
 import { Audio } from "expo-av";
 import { Platform } from "react-native";
 

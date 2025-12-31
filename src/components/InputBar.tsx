@@ -1,3 +1,8 @@
+/**
+ * ⚠️ CORE PIPELINE FILE
+ * Do NOT modify logic without explicit design approval.
+ * UI-only changes must not touch behavior.
+ */
 import { View, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useState } from "react";
 import { sendTextExpense, sendAudio } from "../services/api";
