@@ -1,7 +1,18 @@
 /**
+ * Confirmation Popup
+ * 
+ * Shows expense confirmation with three modes:
+ * - "added": Shows added expenses with checkboxes
+ * - "selecting": Category selection grid
+ * - "thanks": Confirmation message
+ * 
+ * Design:
+ * - Single expense: Pill shape (high border radius)
+ * - Multiple expenses: Rounded card (lower border radius)
+ * - Scrollable when content exceeds max height
+ * 
  * ⚠️ CORE PIPELINE FILE
  * Do NOT modify logic without explicit design approval.
- * UI-only changes must not touch behavior.
  */
 import { Animated, StyleSheet, Text, View, TouchableOpacity, ScrollView } from "react-native";
 import { useEffect, useRef, useState } from "react";
@@ -63,6 +74,12 @@ export function ConfirmationPopup({ visible, expenses, mode, onItemPress, onCate
 
     if (!shouldRender) return null;
 
+    // Dynamic border radius based on content
+    // Single item or thanks = pill (high radius)
+    // Multiple items or category list = rounded card (lower radius)
+    const isCompact = (mode === "added" && expenses.length <= 1) || mode === "thanks";
+    const borderRadius = isCompact ? 28 : 20;
+
     return (
         <Animated.View
             pointerEvents="box-none"
@@ -71,34 +88,71 @@ export function ConfirmationPopup({ visible, expenses, mode, onItemPress, onCate
                 {
                     opacity,
                     transform: [{ translateY }],
+                    borderRadius,
                 },
             ]}
         >
-            <View pointerEvents="auto">
+            <View pointerEvents="auto" style={styles.content}>
                 {mode === "added" && (
                     <>
-                        <Text style={styles.title}>Expenses added</Text>
-                        {expenses.map((e, i) => (
-                            <TouchableOpacity key={i} onPress={() => onItemPress?.(i)} activeOpacity={0.7} style={styles.row}>
-                                <View style={styles.checkboxSelected}>
-                                    <View style={styles.checkboxInner} />
-                                </View>
-                                <Text style={styles.item}>
-                                    {parseFloat(e.amount.toString()).toLocaleString()} → {e.category}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
+                        <Text style={styles.title}>Added</Text>
+                        <ScrollView
+                            style={styles.scrollList}
+                            showsVerticalScrollIndicator={false}
+                            bounces={false}
+                        >
+                            {expenses.map((e, i) => (
+                                <TouchableOpacity
+                                    key={i}
+                                    onPress={() => onItemPress?.(i)}
+                                    activeOpacity={0.7}
+                                    style={[
+                                        styles.row,
+                                        i === expenses.length - 1 && styles.lastRow
+                                    ]}
+                                >
+                                    <View style={styles.checkboxSelected}>
+                                        <View style={styles.checkboxInner} />
+                                    </View>
+                                    <View style={styles.itemContent}>
+                                        <Text style={styles.item} numberOfLines={1}>
+                                            ${parseFloat(e.amount.toString()).toLocaleString()} · {e.category}
+                                        </Text>
+                                        {e.title && e.title !== 'Mock Item' && (
+                                            <Text style={styles.itemTitle} numberOfLines={1}>
+                                                {e.title}
+                                            </Text>
+                                        )}
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        {expenses.length > 1 && (
+                            <Text style={styles.tapHint}>Tap to change category</Text>
+                        )}
                     </>
                 )}
 
                 {mode === "selecting" && (
                     <>
                         <Text style={styles.title}>Correct Category</Text>
-                        <ScrollView style={styles.scrollList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                            {CATEGORIES.map((cat) => {
+                        <ScrollView
+                            style={styles.categoryList}
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator={false}
+                            bounces={false}
+                        >
+                            {CATEGORIES.map((cat, i) => {
                                 const isSelected = cat === selectedCategory;
                                 return (
-                                    <TouchableOpacity key={cat} onPress={() => onCategorySelect?.(cat)} style={styles.row}>
+                                    <TouchableOpacity
+                                        key={cat}
+                                        onPress={() => onCategorySelect?.(cat)}
+                                        style={[
+                                            styles.row,
+                                            i === CATEGORIES.length - 1 && styles.lastRow
+                                        ]}
+                                    >
                                         <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
                                             {isSelected && <View style={styles.checkboxInner} />}
                                         </View>
@@ -113,7 +167,7 @@ export function ConfirmationPopup({ visible, expenses, mode, onItemPress, onCate
                 )}
 
                 {mode === "thanks" && (
-                    <Text style={styles.thanks}>Thanks — I’ll remember this.</Text>
+                    <Text style={styles.thanks}>Thanks — I'll remember this.</Text>
                 )}
             </View>
         </Animated.View>
@@ -127,46 +181,77 @@ const styles = StyleSheet.create({
         marginTop: 40,
         alignSelf: "center",
         backgroundColor: "#F5F5F0",
-        paddingHorizontal: 24,
-        paddingVertical: 14,
-        borderRadius: 50,
-        maxWidth: "85%",
         shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 8,
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 10,
         zIndex: 1000,
-        maxHeight: 300,
+        minWidth: 220,
+        maxWidth: "88%",
+        overflow: "hidden",
+    },
+    content: {
+        paddingHorizontal: 20,
+        paddingVertical: 16,
     },
     title: {
         color: "#000",
-        marginBottom: 8,
-        opacity: 0.5,
+        marginBottom: 10,
+        opacity: 0.45,
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 1,
         fontSize: 10,
-        ...typography.regular // Assuming regular per theme consistency, though previous was fontWeight 600
+        ...typography.medium,
+    },
+    scrollList: {
+        maxHeight: 180,
+    },
+    categoryList: {
+        maxHeight: 220,
     },
     row: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 8,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.06)',
+    },
+    lastRow: {
+        borderBottomWidth: 0,
     },
     item: {
         fontSize: 15,
         color: "#000",
+        ...typography.regular,
         marginLeft: 12,
-        ...typography.regular
+    },
+    itemContent: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    itemTitle: {
+        fontSize: 12,
+        color: "#888",
+        marginTop: 2,
+        ...typography.light,
     },
     selectedText: {
-        // fontWeight handled by fontFamily if using regular vs medium
-        ...typography.medium
+        ...typography.medium,
     },
     thanks: {
-        fontSize: 14,
+        fontSize: 15,
         color: "#000",
         textAlign: 'center',
-        ...typography.regular
+        paddingVertical: 4,
+        ...typography.regular,
+    },
+    tapHint: {
+        fontSize: 11,
+        color: "#999",
+        textAlign: 'center',
+        marginTop: 8,
+        ...typography.light,
     },
     // Checkbox Styling
     checkbox: {
@@ -174,7 +259,7 @@ const styles = StyleSheet.create({
         height: 18,
         borderRadius: 4,
         borderWidth: 1.5,
-        borderColor: '#999',
+        borderColor: '#bbb',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -193,8 +278,5 @@ const styles = StyleSheet.create({
         height: 8,
         backgroundColor: '#fff',
         borderRadius: 2,
-    },
-    scrollList: {
-        maxHeight: 200,
     },
 });

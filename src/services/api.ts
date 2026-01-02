@@ -55,10 +55,17 @@ export async function sendAudio(
     return response.data;
 }
 
-export async function correctExpense(expenseId: string, correctedCategory: string) {
+export async function correctExpense(
+    expenseId: string,
+    correctedCategory: string,
+    originalText?: string,      // For model training
+    predictedCategory?: string  // What LLM originally predicted
+) {
     const response = await api.post("/correct-expense", {
         expense_id: expenseId,
         corrected_category: correctedCategory,
+        original_text: originalText,
+        predicted_category: predictedCategory,
     });
     return response.data;
 }
@@ -66,6 +73,14 @@ export async function correctExpense(expenseId: string, correctedCategory: strin
 export async function getExpenses(userId: string, category?: string) {
     const response = await api.get("/expenses", {
         params: { user_id: userId, category }
+    });
+    return response.data;
+}
+
+export async function exportExpenses(userId: string) {
+    const response = await api.get("/export/excel", {
+        params: { user_id: userId },
+        responseType: "arraybuffer",
     });
     return response.data;
 }

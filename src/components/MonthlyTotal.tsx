@@ -1,9 +1,19 @@
+/**
+ * Monthly Total Component
+ * 
+ * Displays the total expenses for the current month on the main screen.
+ * 
+ * CHANGES:
+ * - Now uses useCurrentMonthTotal selector for per-month tracking
+ */
+
 import { Text, StyleSheet } from "react-native";
-import { useExpenseStore } from "../store/expenseStore";
+import { useExpenseStore, useCurrentMonthTotal } from "../store/expenseStore";
 import { typography } from "../theme/typography";
 
 export function MonthlyTotal() {
-    const { monthlyTotal, isNewUser } = useExpenseStore();
+    const monthlyTotal = useCurrentMonthTotal();
+    const { isNewUser } = useExpenseStore();
 
     return (
         <>

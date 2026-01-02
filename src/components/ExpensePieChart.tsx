@@ -1,98 +1,279 @@
-import { View, StyleSheet } from "react-native";
-import Svg, { Path, G, Text as SvgText } from "react-native-svg";
-import { useExpenseStore } from "../store/expenseStore";
+/**
+ * Expense Pie Chart Component
+ * 
+ * Displays expense breakdown by category as a pie chart.
+ * - All slices are uniform black/gray (minimal philosophy)
+ * - Numbers and categories ONLY show when slice is selected
+ * - Category labels curve along the outer arc
+ * - Uses touch coordinate detection for mobile compatibility
+ * - Tap to select, tap again to navigate to history
+ */
+
+import { View, StyleSheet, Pressable, GestureResponderEvent } from "react-native";
+import Svg, { Path, G, Text as SvgText, Circle, Defs, TextPath } from "react-native-svg";
+import { useCategoryTotals } from "../store/expenseStore";
 import { typography } from "../theme/typography";
+import { useRouter } from "expo-router";
+import { useRef } from "react";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface ExpensePieChartProps {
     selectedCategory: string | null;
     onSlicePress: (category: string) => void;
+    onDeselect?: () => void;
 }
 
-function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
-    var angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+interface SliceData {
+    category: string;
+    amount: number;
+    startAngle: number;
+    endAngle: number;
+    midAngle: number;
+    sliceAngle: number;
+}
+
+// ============================================================================
+// Geometry Helpers
+// ============================================================================
+
+function polarToCartesian(cx: number, cy: number, radius: number, angleDegrees: number) {
+    const angleRadians = (angleDegrees - 90) * Math.PI / 180.0;
     return {
-        x: centerX + (radius * Math.cos(angleInRadians)),
-        y: centerY + (radius * Math.sin(angleInRadians))
+        x: cx + (radius * Math.cos(angleRadians)),
+        y: cy + (radius * Math.sin(angleRadians))
     };
 }
 
-function describeArc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+function cartesianToPolar(cx: number, cy: number, x: number, y: number) {
+    const dx = x - cx;
+    const dy = y - cy;
+    const radius = Math.sqrt(dx * dx + dy * dy);
+    // Convert to angle in degrees (0 at top, clockwise)
+    let angle = Math.atan2(dx, -dy) * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+    return { radius, angle };
+}
+
+function describeArc(x: number, y: number, radius: number, startAngle: number, endAngle: number): string {
     if (endAngle - startAngle >= 360) {
         return `M ${x} ${y - radius} A ${radius} ${radius} 0 1 1 ${x} ${y + radius} A ${radius} ${radius} 0 1 1 ${x} ${y - radius}`;
     }
 
-    var start = polarToCartesian(x, y, radius, endAngle);
-    var end = polarToCartesian(x, y, radius, startAngle);
-    var largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+    const start = polarToCartesian(x, y, radius, endAngle);
+    const end = polarToCartesian(x, y, radius, startAngle);
+    const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
 
-    var d = [
+    return [
         "M", x, y,
         "L", start.x, start.y,
         "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y,
         "Z"
     ].join(" ");
-
-    return d;
 }
 
-export function ExpensePieChart({ selectedCategory, onSlicePress }: ExpensePieChartProps) {
-    const { categoryTotals } = useExpenseStore();
+function describeArcPath(cx: number, cy: number, radius: number, startAngle: number, endAngle: number): string {
+    const start = polarToCartesian(cx, cy, radius, startAngle);
+    const end = polarToCartesian(cx, cy, radius, endAngle);
+    const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
 
-    const entries = Object.entries(categoryTotals);
+    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
+}
+
+function getSliceCenter(cx: number, cy: number, radius: number, startAngle: number, endAngle: number) {
+    const midAngle = startAngle + (endAngle - startAngle) / 2;
+    const centerRadius = radius * 0.55;
+    return polarToCartesian(cx, cy, centerRadius, midAngle);
+}
+
+function formatAmount(amount: number): string {
+    return amount.toLocaleString();
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export function ExpensePieChart({ selectedCategory, onSlicePress, onDeselect }: ExpensePieChartProps) {
+    const categoryTotals = useCategoryTotals();
+    const router = useRouter();
+    const containerRef = useRef<View>(null);
+
+    const entries = Object.entries(categoryTotals).filter(([_, val]) => val > 0);
     const total = entries.reduce((sum, [_, val]) => sum + val, 0);
 
-    let currentAngle = 0;
-    const radius = 100;
-    const cx = 130;
-    const cy = 130;
+    // Chart dimensions
+    const chartSize = 300;
+    const cx = 150;
+    const cy = 150;
+    const baseRadius = 95;
+    const selectedRadius = 105;
+    const labelRadius = 115;
 
-    const selectedAmount = selectedCategory ? categoryTotals[selectedCategory] : 0;
+    // Calculate slice data
+    let currentAngle = 0;
+    const sliceData: SliceData[] = entries.map(([cat, val]) => {
+        const angle = (val / total) * 360;
+        const data: SliceData = {
+            category: cat,
+            amount: val,
+            startAngle: currentAngle,
+            endAngle: currentAngle + angle,
+            midAngle: currentAngle + angle / 2,
+            sliceAngle: angle,
+        };
+        currentAngle += angle;
+        return data;
+    });
+
+    // Find which slice was tapped based on coordinates
+    const findSliceAtPoint = (x: number, y: number): SliceData | null => {
+        const { radius, angle } = cartesianToPolar(cx, cy, x, y);
+
+        // Must be within the pie area (not too close to center, not too far)
+        const minRadius = 15; // Ignore clicks very close to center
+        const maxRadius = selectedRadius + 5;
+
+        if (radius < minRadius || radius > maxRadius) {
+            return null;
+        }
+
+        // Find matching slice by angle
+        for (const slice of sliceData) {
+            if (angle >= slice.startAngle && angle < slice.endAngle) {
+                return slice;
+            }
+        }
+        return null;
+    };
+
+    // Handle tap on chart
+    const handlePress = (event: GestureResponderEvent) => {
+        const { locationX, locationY } = event.nativeEvent;
+        const slice = findSliceAtPoint(locationX, locationY);
+
+        if (slice) {
+            if (selectedCategory === slice.category) {
+                // Second tap - navigate to history
+                router.push({
+                    pathname: "/category-history",
+                    params: { category: slice.category, month: new Date().toISOString().slice(0, 7) }
+                });
+            } else {
+                onSlicePress(slice.category);
+            }
+        } else {
+            // Tapped outside slices - deselect
+            if (selectedCategory && onDeselect) {
+                onDeselect();
+            }
+        }
+    };
+
+    // Empty state
+    if (entries.length === 0 || total === 0) {
+        return (
+            <View style={styles.wrap}>
+                <Svg width={chartSize} height={chartSize} viewBox="0 0 300 300">
+                    <Circle cx={cx} cy={cy} r={100} fill="#0A0A0A" stroke="#222" strokeWidth={1} />
+                    <SvgText x={cx} y={cy + 5} fill="#444" fontSize="14" textAnchor="middle">
+                        No expenses yet
+                    </SvgText>
+                </Svg>
+            </View>
+        );
+    }
+
+    const selectedSlice = sliceData.find(s => s.category === selectedCategory);
 
     return (
-        <View style={styles.wrap}>
-            <Svg width={260} height={260} viewBox="0 0 260 260">
+        <Pressable style={styles.wrap} onPress={handlePress}>
+            <Svg width={chartSize} height={chartSize} viewBox="0 0 300 300">
+                {/* Pie slices */}
                 <G>
-                    {entries.map(([cat, val]) => {
-                        if (val === 0) return null;
-                        const angle = (val / total) * 360;
-                        const path = describeArc(cx, cy, radius, currentAngle, currentAngle + angle);
-
-                        const isSelected = selectedCategory === cat;
+                    {sliceData.map((slice) => {
+                        const isSelected = selectedCategory === slice.category;
                         const isDimmed = selectedCategory !== null && !isSelected;
+                        const radius = isSelected ? selectedRadius : baseRadius;
+                        const path = describeArc(cx, cy, radius, slice.startAngle, slice.endAngle);
 
-                        const slice = (
+                        return (
                             <Path
-                                key={cat}
+                                key={slice.category}
                                 d={path}
-                                fill={isSelected ? "#2A2A2A" : "transparent"}
-                                stroke="#FFFFFF"
-                                strokeWidth={isSelected ? "1.5" : "1"}
-                                opacity={isDimmed ? 0.3 : 1}
-                                onPress={() => onSlicePress(cat)}
+                                fill={isSelected ? "#1A1A1A" : "#0A0A0A"}
+                                stroke={isSelected ? "#444" : "#222"}
+                                strokeWidth={isSelected ? 2 : 1}
+                                opacity={isDimmed ? 0.25 : 1}
                             />
                         );
-
-                        currentAngle += angle;
-                        return slice;
                     })}
                 </G>
-                {selectedCategory && (
+
+                {/* Show amount ONLY for selected slice */}
+                {selectedSlice && (
                     <SvgText
-                        x={cx}
-                        y={cy}
-                        fill="#FFF"
-                        fontSize="24"
+                        x={getSliceCenter(cx, cy, selectedRadius, selectedSlice.startAngle, selectedSlice.endAngle).x}
+                        y={getSliceCenter(cx, cy, selectedRadius, selectedSlice.startAngle, selectedSlice.endAngle).y}
+                        fill="#FFFFFF"
+                        fontSize={16}
                         fontFamily={typography.medium.fontFamily}
                         textAnchor="middle"
                         alignmentBaseline="middle"
                     >
-                        {selectedAmount.toLocaleString()}
+                        {formatAmount(selectedSlice.amount)}
+                    </SvgText>
+                )}
+
+                {/* Show category name on outer arc ONLY for selected slice */}
+                {selectedSlice && (
+                    <G>
+                        <Defs>
+                            <Path
+                                id="arcPath"
+                                d={describeArcPath(
+                                    cx, cy, labelRadius,
+                                    selectedSlice.startAngle,
+                                    selectedSlice.endAngle
+                                )}
+                            />
+                        </Defs>
+                        <SvgText
+                            fill="#666"
+                            fontSize={11}
+                            fontFamily={typography.regular.fontFamily}
+                        >
+                            <TextPath href="#arcPath" startOffset="50%" textAnchor="middle">
+                                {selectedSlice.category}
+                            </TextPath>
+                        </SvgText>
+                    </G>
+                )}
+
+                {/* Center total when nothing selected */}
+                {!selectedCategory && (
+                    <SvgText
+                        x={cx}
+                        y={cy + 5}
+                        fill="#FFFFFF"
+                        fontSize={24}
+                        fontFamily={typography.medium.fontFamily}
+                        textAnchor="middle"
+                        alignmentBaseline="middle"
+                    >
+                        {formatAmount(total)}
                     </SvgText>
                 )}
             </Svg>
-        </View>
+        </Pressable>
     );
 }
+
+// ============================================================================
+// Styles
+// ============================================================================
 
 const styles = StyleSheet.create({
     wrap: {

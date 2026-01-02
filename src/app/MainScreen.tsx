@@ -1,20 +1,38 @@
 /**
+ * Main Screen
+ * 
+ * Primary expense entry screen with:
+ * - Avatar button (top left)
+ * - Monthly total (center, tappable to go to summary)
+ * - Input bar (bottom, for text/voice entry) OR Trial expired banner
+ * - Confirmation popup (appears after adding expense)
+ * 
+ * Trial System:
+ * - Checks trial status on mount
+ * - If expired, shows TrialExpiredBanner instead of InputBar
+ * - User can still tap to view summary/history (read-only)
+ * 
  * ⚠️ CORE PIPELINE FILE
  * Do NOT modify logic without explicit design approval.
- * UI-only changes must not touch behavior.
  */
-import { View, StyleSheet, Pressable } from "react-native";
+
+import { View, StyleSheet, Pressable, KeyboardAvoidingView, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import { useEffect } from "react";
 import * as Haptics from "expo-haptics";
 import { AvatarButton } from "../components/AvatarButton";
 import { MonthlyTotal } from "../components/MonthlyTotal";
 import { MonthContextLabel } from "../components/MonthContextLabel";
 import { InputBar } from "../components/InputBar";
+import { TrialExpiredBanner } from "../components/TrialExpiredBanner";
 import { ConfirmationPopup } from "../components/ConfirmationPopup";
 import { useExpenseStore } from "../store/expenseStore";
+import { useUserStore } from "../store/userStore";
 
 export default function MainScreen() {
     const router = useRouter();
+
+    // Expense state
     const {
         popupVisible,
         popupMode,
@@ -25,13 +43,25 @@ export default function MainScreen() {
         handleCategorySelect
     } = useExpenseStore();
 
+    // User/trial state
+    const { canAddExpenses, fetchStatus } = useUserStore();
+
+    // Check trial status on mount
+    useEffect(() => {
+        fetchStatus();
+    }, []);
+
     const handleTotalPress = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
         router.push("/summary");
     };
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
             <AvatarButton />
 
             <View style={styles.center}>
@@ -43,7 +73,8 @@ export default function MainScreen() {
                 </Pressable>
             </View>
 
-            <InputBar />
+            {/* Show InputBar if trial active, TrialExpiredBanner if expired */}
+            {canAddExpenses ? <InputBar /> : <TrialExpiredBanner />}
 
             <ConfirmationPopup
                 visible={popupVisible}
@@ -53,7 +84,7 @@ export default function MainScreen() {
                 onCategorySelect={handleCategorySelect}
                 selectedCategory={editingIndex !== null ? popupExpenses[editingIndex]?.category : undefined}
             />
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 

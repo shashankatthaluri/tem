@@ -15,14 +15,31 @@ export const query = (text: string, params?: any[]) => pool.query(text, params);
 
 export const initDB = async () => {
   try {
-    // Create users table
+    // Create users table with subscription tracking and auth
     await query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) UNIQUE,
+        password VARCHAR(255),
+        name VARCHAR(255),
+        auth_provider VARCHAR(20) DEFAULT 'email',
+        apple_user_id VARCHAR(255),
+        subscription_status VARCHAR(20) DEFAULT 'trial',
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
+
+    // Add missing columns if they don't exist (for existing databases)
+    // This is needed because CREATE TABLE IF NOT EXISTS doesn't add new columns
+    await query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR(255);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_user_id VARCHAR(255);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(20) DEFAULT 'trial';
+    `).catch(() => { }); // Ignore errors if columns already exist
 
     // Create expenses table
     await query(`

@@ -1,16 +1,20 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+
+// Override system env vars with .env file values (MUST be before other imports that use env vars)
+dotenv.config({ override: true });
+
 import parseRouter from './routes/parse';
 import parseAudioRouter from './routes/parseAudio';
 import correctionRouter from './routes/correct';
 import expensesRouter from './routes/expenses';
 import exportRouter from './routes/export';
+import userRouter from './routes/user';
+import authRouter from './routes/auth';
 import { initDB } from './db';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +36,8 @@ app.use('/', parseAudioRouter);
 app.use('/', correctionRouter);
 app.use('/', expensesRouter);
 app.use('/', exportRouter);
+app.use('/', userRouter);
+app.use('/', authRouter);
 
 // Health check
 app.get('/health', (req, res) => {

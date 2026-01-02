@@ -1,40 +1,242 @@
-import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
+/**
+ * User Profile Screen
+ * 
+ * Shows user info, subscription status, and actions.
+ * 
+ * Features:
+ * - Trial status with countdown
+ * - Upgrade options (monthly/lifetime)
+ * - Export data
+ * - Logout
+ * 
+ * CHANGES:
+ * - Now uses userStore for real trial status from API
+ * - Upgrade connects to backend
+ */
+
+import { View, Text, StyleSheet, Pressable, Alert, Platform, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { File, Directory, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import Svg, { Path as SvgPath } from "react-native-svg";
 import { typography } from "../theme/typography";
 import { Avatar } from "../components/Avatar";
+import { API_BASE_URL } from "../services/api";
+import { useUserStore } from "../store/userStore";
+import { useExpenseStore } from "../store/expenseStore";
 
-type SubscriptionStatus = "trial" | "monthly" | "lifetime";
-
-interface UserSubscription {
-    status: SubscriptionStatus;
-    trialDaysLeft?: number;
-    nextBillingDate?: string;
-    isEarlySupporter?: boolean;
-}
 
 export default function UserScreen() {
     const router = useRouter();
+    const { user, status, trialDaysLeft, isExpired, fetchStatus, upgrade, logout } = useUserStore();
 
-    const [subscription, setSubscription] = useState<UserSubscription>({
-        status: "trial",
-        trialDaysLeft: 12,
-    });
-
+    const [exporting, setExporting] = useState(false);
     const [showUpgradeOptions, setShowUpgradeOptions] = useState(false);
+    const [upgrading, setUpgrading] = useState(false);
 
-    const handleUpgrade = (type: 'monthly' | 'lifetime') => {
-        setSubscription({
-            status: type,
-            nextBillingDate: type === 'monthly' ? "Oct 14" : undefined,
-            isEarlySupporter: type === 'lifetime'
-        });
-        setShowUpgradeOptions(false);
-        Alert.alert("Success", "Welcome to Tem Premium.");
+    // Fetch status on mount
+    useEffect(() => {
+        fetchStatus();
+    }, []);
+
+    const handleUpgrade = async (type: 'monthly' | 'lifetime') => {
+        setUpgrading(true);
+        try {
+            await upgrade(type);
+            setShowUpgradeOptions(false);
+            Alert.alert("Success", "Welcome to Tem Premium.");
+        } catch (e) {
+            Alert.alert("Error", "Failed to upgrade. Please try again.");
+        } finally {
+            setUpgrading(false);
+        }
     };
 
-    const handleLogout = () => {
-        router.replace("/");
+    const handleLogout = async () => {
+        // Clear expense data first
+        useExpenseStore.getState().clearExpenses();
+        await logout();
+        router.replace("/auth");
+    };
+
+    async function handleExport() {
+        if (exporting) return;
+
+        setExporting(true);
+
+        try {
+            // 🌐 WEB — keep fetch-based download
+            if (Platform.OS === "web") {
+                const res = await fetch(
+                    `${API_BASE_URL}/export/excel?user_id=${user?.id}`
+                );
+
+                if (!res.ok) {
+                    throw new Error(`Server error: ${res.status}`);
+                }
+
+                const blob = await res.blob();
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `tem-expenses-${new Date()
+                    .toISOString()
+                    .slice(0, 7)}.xlsx`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                return;
+            }
+
+            // 📱 MOBILE — Check if sharing is available
+            const isAvailable = await Sharing.isAvailableAsync();
+            if (!isAvailable) {
+                Alert.alert("Export Error", "Sharing is not available on this device.");
+                return;
+            }
+
+            // Create cache directory for exports if it doesn't exist
+            const exportDir = new Directory(Paths.cache, 'exports');
+            if (!exportDir.exists) {
+                exportDir.create();
+            }
+
+            // Download file using new Expo SDK 54 File API
+            const downloadedFile = await File.downloadFileAsync(
+                `${API_BASE_URL}/export/excel?user_id=${user?.id}`,
+                exportDir,
+                { idempotent: true } // Overwrite if exists
+            );
+
+            // Validate download was successful
+            if (!downloadedFile.exists) {
+                throw new Error('Download failed: file was not created');
+            }
+
+            // Share the file
+            await Sharing.shareAsync(downloadedFile.uri, {
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                dialogTitle: 'Export Expenses',
+            });
+
+        } catch (e: any) {
+            console.error("Export failed:", e);
+            Alert.alert(
+                "Export Failed",
+                e?.message || "Could not export expenses. Please check your connection and try again."
+            );
+        } finally {
+            setExporting(false);
+        }
+    }
+
+    // Render subscription status
+    const renderSubscriptionStatus = () => {
+        if (status === 'trial' && !isExpired) {
+            return (
+                <>
+                    <Text style={styles.statusText}>Trial: {trialDaysLeft} days left</Text>
+
+                    {!showUpgradeOptions ? (
+                        <Pressable onPress={() => setShowUpgradeOptions(true)}>
+                            <Text style={styles.upgradeLink}>Upgrade to support Tem</Text>
+                        </Pressable>
+                    ) : (
+                        <View style={styles.upgradeOptions}>
+                            <Pressable
+                                onPress={() => handleUpgrade('monthly')}
+                                style={styles.optionRow}
+                                disabled={upgrading}
+                            >
+                                <Text style={styles.optionTitle}>Monthly</Text>
+                                <Text style={styles.optionPrice}>$4.99 / month</Text>
+                                <Text style={styles.optionSub}>Cancel anytime</Text>
+                            </Pressable>
+
+                            <Pressable
+                                onPress={() => handleUpgrade('lifetime')}
+                                style={[styles.optionRow, { marginTop: 20 }]}
+                                disabled={upgrading}
+                            >
+                                <Text style={styles.optionTitle}>Early supporter</Text>
+                                <Text style={styles.optionPrice}>$49 one-time</Text>
+                                <Text style={styles.optionSub}>Lifetime access</Text>
+                            </Pressable>
+                        </View>
+                    )}
+                </>
+            );
+        }
+
+        if (status === 'expired' || isExpired) {
+            return (
+                <>
+                    <Text style={styles.statusText}>Trial ended</Text>
+                    <Text style={styles.subText}>Upgrade to continue tracking expenses</Text>
+
+                    <View style={styles.upgradeOptions}>
+                        <Pressable
+                            onPress={() => handleUpgrade('monthly')}
+                            style={styles.optionRow}
+                            disabled={upgrading}
+                        >
+                            <Text style={styles.optionTitle}>Monthly</Text>
+                            <Text style={styles.optionPrice}>$4.99 / month</Text>
+                            <Text style={styles.optionSub}>Cancel anytime</Text>
+                        </Pressable>
+
+                        <Pressable
+                            onPress={() => handleUpgrade('lifetime')}
+                            style={[styles.optionRow, { marginTop: 20 }]}
+                            disabled={upgrading}
+                        >
+                            <Text style={styles.optionTitle}>Early supporter</Text>
+                            <Text style={styles.optionPrice}>$49 one-time</Text>
+                            <Text style={styles.optionSub}>Lifetime access</Text>
+                        </Pressable>
+                    </View>
+                </>
+            );
+        }
+
+        if (status === 'monthly') {
+            return (
+                <>
+                    <Text style={styles.statusText}>Subscription active</Text>
+                    <Text style={styles.subText}>Cancel anytime</Text>
+                    {!showUpgradeOptions && (
+                        <Pressable onPress={() => setShowUpgradeOptions(true)}>
+                            <Text style={[styles.upgradeLink, { marginTop: 12 }]}>Upgrade to lifetime</Text>
+                        </Pressable>
+                    )}
+                    {showUpgradeOptions && (
+                        <Pressable
+                            onPress={() => handleUpgrade('lifetime')}
+                            style={[styles.optionRow, { marginTop: 20 }]}
+                            disabled={upgrading}
+                        >
+                            <Text style={styles.optionTitle}>Early supporter</Text>
+                            <Text style={styles.optionPrice}>$49 one-time</Text>
+                            <Text style={styles.optionSub}>Lifetime access</Text>
+                        </Pressable>
+                    )}
+                    <Text style={styles.thanks}>Thanks for supporting Tem ♥</Text>
+                </>
+            );
+        }
+
+        if (status === 'lifetime') {
+            return (
+                <>
+                    <Text style={styles.statusText}>Lifetime access</Text>
+                    <Text style={styles.subText}>Early supporter</Text>
+                    <Text style={styles.thanks}>Thanks for supporting Tem ♥</Text>
+                </>
+            );
+        }
+
+        return null;
     };
 
     return (
@@ -46,74 +248,25 @@ export default function UserScreen() {
             </View>
 
             <View style={styles.identity}>
-                <Avatar userId="00000000-0000-0000-0000-000000000001" size={72} />
+                <Avatar userId={user?.id || "00000000-0000-0000-0000-000000000001"} size={72} />
                 <View style={{ height: 16 }} />
-                <Text style={styles.name}>Shiva</Text>
-                <Text style={styles.email}>shiva@example.com</Text>
+                <Text style={styles.name}>{user?.name || "User"}</Text>
+                <Text style={styles.email}>{user?.email || ""}</Text>
             </View>
 
             <View style={styles.subscriptionSection}>
-                {subscription.status === "trial" && (
-                    <>
-                        <Text style={styles.statusText}>Trial: {subscription.trialDaysLeft} days left</Text>
-
-                        {!showUpgradeOptions ? (
-                            <Pressable onPress={() => setShowUpgradeOptions(true)}>
-                                <Text style={styles.upgradeLink}>Upgrade to support Tem</Text>
-                            </Pressable>
-                        ) : (
-                            <View style={styles.upgradeOptions}>
-                                <Pressable onPress={() => handleUpgrade('monthly')} style={styles.optionRow}>
-                                    <Text style={styles.optionTitle}>Monthly</Text>
-                                    <Text style={styles.optionPrice}>$4.99 / month</Text>
-                                    <Text style={styles.optionSub}>Cancel anytime</Text>
-                                </Pressable>
-
-                                <Pressable onPress={() => handleUpgrade('lifetime')} style={[styles.optionRow, { marginTop: 20 }]}>
-                                    <Text style={styles.optionTitle}>Early supporter</Text>
-                                    <Text style={styles.optionPrice}>$49 one-time</Text>
-                                    <Text style={styles.optionSub}>Lifetime access</Text>
-                                </Pressable>
-                            </View>
-                        )}
-                    </>
-                )}
-
-                {subscription.status === "monthly" && (
-                    <>
-                        <Text style={styles.statusText}>Subscription active</Text>
-                        <Text style={styles.subText}>Next billing: {subscription.nextBillingDate}</Text>
-                        <Text style={styles.subText}>Cancel anytime</Text>
-                        {!showUpgradeOptions && (
-                            <Pressable onPress={() => setShowUpgradeOptions(true)}>
-                                <Text style={[styles.upgradeLink, { marginTop: 12 }]}>Upgrade to lifetime</Text>
-                            </Pressable>
-                        )}
-                        {showUpgradeOptions && (
-                            <Pressable onPress={() => handleUpgrade('lifetime')} style={[styles.optionRow, { marginTop: 20 }]}>
-                                <Text style={styles.optionTitle}>Early supporter</Text>
-                                <Text style={styles.optionPrice}>$49 one-time</Text>
-                                <Text style={styles.optionSub}>Lifetime access</Text>
-                            </Pressable>
-                        )}
-                        <Text style={styles.thanks}>Thanks for supporting Tem ♥</Text>
-                    </>
-                )}
-
-                {subscription.status === "lifetime" && (
-                    <>
-                        <Text style={styles.statusText}>Lifetime access</Text>
-                        <Text style={styles.subText}>Early supporter</Text>
-                        <Text style={styles.thanks}>Thanks for supporting Tem ♥</Text>
-                    </>
-                )}
+                {renderSubscriptionStatus()}
             </View>
 
             <View style={{ flex: 1 }} />
 
             <View style={styles.actions}>
-                <Pressable onPress={() => Alert.alert("Export")}>
-                    <Text style={styles.actionText}>Export data</Text>
+                <Pressable onPress={handleExport} hitSlop={10} style={styles.exportBtn} disabled={exporting}>
+                    {exporting ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                        <Text style={styles.exportText}>Export Data</Text>
+                    )}
                 </Pressable>
                 <Pressable onPress={handleLogout} style={styles.logoutBtn}>
                     <Text style={styles.actionText}>Log out</Text>
@@ -219,14 +372,25 @@ const styles = StyleSheet.create({
     },
     actions: {
         width: '100%',
+        alignItems: 'center',
+        marginBottom: 20
+    },
+    exportBtn: {
+        padding: 10,
+    },
+    exportText: {
+        color: "#fff",
+        fontSize: 15,
+        opacity: 0.5,
+        ...typography.light,
     },
     actionText: {
         color: "#fff",
         fontSize: 15,
-        opacity: 0.9,
-        ...typography.regular
+        opacity: 0.5,
+        ...typography.light
     },
     logoutBtn: {
-        marginTop: 24,
+        marginTop: 20,
     }
 });

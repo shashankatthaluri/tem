@@ -5,7 +5,7 @@ import { checkSubscription } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/export/excel', checkSubscription, async (req: Request, res: Response): Promise<void> => {
+router.get('/export/excel', async (req: Request, res: Response): Promise<void> => {
     try {
         const { user_id } = req.query;
 
